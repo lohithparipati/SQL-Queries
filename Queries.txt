@@ -1,0 +1,373 @@
+Q1: Approach-1 below code: Prof. Saty agreed. 
+    Approach-2: http://sqlfiddle.com/#!15/26b86/3
+Q2: http://sqlfiddle.com/#!9/6e4530/1
+Q3: http://sqlfiddle.com/#!5/c162f/1
+Q4: http://sqlfiddle.com/#!7/92de8/1Q5: http://sqlfiddle.com/#!7/bb9528/4[Q5 bonus #1: http://sqlfiddle.com/#!7/bb9528/2]
+[Q5 bonus #2: http://sqlfiddle.com/#!7/bb9528/3]
+
+————————————————————————————————————
+Details:
+————————————————————————————————————
+
+————————————————————————————————————
+Question-1
+————————————————————————————————————
+
+————————————————————————————————————
+Answer-1-1: (Approach: PostgreSQL's exclude constraint and range operators)
+(Test Environment: PostgreSql version 9.x)
+————————————————————————————————————
+
+Note regarding URL: “Not a problem, Lohith - just submit the code, and include a note that contains what you wrote me. - Prof. Saty”
+————————————————————————————————————
+
+CREATE EXTENSION btree_gist;
+
+
+CREATE TABLE HotelStays (                                              
+roomNum INTEGER NOT NULL,                                                       
+arrDate DATE NOT NULL,                                                          
+depDate DATE NOT NULL,                                                          
+guestName CHAR(30) NOT NULL,                                                    
+PRIMARY KEY (roomNum, depDate),                                                 
+CONSTRAINT chkdate_1 CHECK (arrDate < depDate),                                 
+EXCLUDE USING GIST ( roomNum WITH =, daterange(arrDate,depDate) WITH && )       
+);
+
+
+INSERT INTO HotelStays(roomNum, arrDate, depDate, guestName) VALUES 
+(123, '2016-02-02', '2016-02-06', 'A'),
+(123, '2016-02-04', '2016-02-08', 'B'),
+(201, '2016-02-10', '2016-02-06', 'C');
+
+
+——————
+Output:
+——————
+
+INSERT INTO HotelStays(roomNum, arrDate, depDate, guestName) VALUES 
+(123, '2016-02-02', '2016-02-06', 'A');
+
+
+>>>>> INSERT 0 1
+
+
+INSERT INTO HotelStays(roomNum, arrDate, depDate, guestName) VALUES
+(123, '2016-02-04','2016-02-08','B');
+
+
+>>>>> Error 1: ERROR:  conflicting key value violates exclusion constraint "hotelstays_roomnum_daterange_excl"
+DETAIL:  Key (roomnum, daterange(arrdate, depdate))=(123, [2016-02-04,2016-02-08)) conflicts with existing key (roomnum, daterange(arrdate, depdate))=(123, [2016-02-02,2016-02-06)).
+
+
+
+INSERT INTO HotelStays(roomNum, arrDate, depDate, guestName) VALUES 
+(201, '2016-02-10','2016-02-06','C'); 
+
+
+>>>>> Error 2: new row for relation "hotelstays" violates check constraint "chkdate_1"
+DETAIL:  Failing row contains (201, 2016-02-10, 2016-02-06, C).
+
+
+————————————————————————————————————
+Answer-1-2: (Approach: PostgreSQL's function) http://sqlfiddle.com/#!15/26b86/3
+————————————————————————————————————
+
+create or replace function checkRoomAvailability(roomNum_1 integer, arrDate_1 date)
+returns boolean as $$
+declare 
+statusRoomNum integer := 11111;
+begin
+        select roomNum into statusRoomNum
+        from hotelstays h
+        where h.roomNum = roomNum_1 and h.depDate > arrDate_1;
+               
+        if statusRoomNum != 11111 then       
+          return False;
+        else
+          return True;
+        end if;
+end;
+$$ language plpgsql;
+
+
+create table hotelstays (
+roomNum integer not null,
+arrDate date not null,
+depDate date not null,
+guestName varchar(255) not null,
+constraint hotelstays_pk primary key (roomNum, arrDate),
+constraint arrDate_chk check (depDate > arrDate),
+constraint availability_chk check(checkRoomAvailability (roomNum, arrDate) = True)
+);
+
+
+insert into hotelstays values
+(123, to_date('20160202', 'YYYYMMDD'), to_date('20160206','YYYYMMDD'), 'A'),
+(123, to_date('20160204', 'YYYYMMDD'), to_date('20160208','YYYYMMDD'), 'B'),
+(201, to_date('20160210', 'YYYYMMDD'), to_date('20160206','YYYYMMDD'), 'C'); 
+
+————————————————————————————————————
+Question-2:
+————————————————————————————————————
+
+create table Enrollment (
+SID integer not null,
+ClassName varchar(250) not null,
+Grade char not null,
+constraint pk_enrollment primary key (SID, ClassName)
+);
+
+
+insert into Enrollment values
+(123,'ART123','A'),
+(123,'BUS456','B'),
+(666,'REL100','D'),
+(666,'ECO966','A'),
+(666,'BUS456','B'),
+(345,'BUS456','A'),
+(345,'ECO966','F');
+
+————————————————————————————————————
+Answer-2:   http://sqlfiddle.com/#!9/6e4530/1
+————————————————————————————————————
+
+create view course_registrations as
+select ClassName, count(SID) as Total from enrollment
+group by ClassName
+order by Total asc, ClassName asc;
+
+
+select * from course_registrations;
+
+————————————————————————————————————
+Question-3:
+————————————————————————————————————
+
+create table work_order_projects (
+ProjectID varchar2(5) not null,
+Step integer not null,
+Status char not null,
+Constraint wop_pk primary key (ProjectID, Step)
+);
+
+
+insert into work_order_projects values
+('P100',0,'C'),
+('P100',1,'W'),
+('P100',2,'W'),
+('P201',0,'C'),
+('P201',1,'C'),
+('P333',0,'W'),
+('P333',1,'W'),
+('P333',2,'W'),
+('P333',3,'W');
+
+————————————————————————————————————
+Answer-3:
+————————————————————————————————————
+
+————————————————————————————————————
+According to Grader/TA: Rijuta Kapoor’s response on handling special cases and responses on D2L discussion forum:
+————————————————————————————————————
+
+————————————————————————————————————
+http://sqlfiddle.com/#!5/c162f/1
+————————————————————————————————————
+
+SELECT ProjectID FROM work_order_projects
+WHERE ProjectID =
+(SELECT ProjectId FROM work_order_projects
+WHERE Step!=0 and Status='W')
+and Step=0 and Status='C';
+
+
+————————————————————————————————————
+According to Grader/TA: Bhavnit Kaur’s response on handling special cases:
+————————————————————————————————————
+
+————————————————————————————————————
+http://sqlfiddle.com/#!5/c162f/2
+————————————————————————————————————
+
+select * from work_order_projects
+where step = 0 and status = 'C' and projectid in
+(select projectid from work_order_projects
+where step != 0 and status != 'C');
+
+————————————————————————————————————
+Question-4:
+————————————————————————————————————
+
+————————————————————————————————————
+Answer-4: http://sqlfiddle.com/#!7/92de8/1
+————————————————————————————————————
+
+create table junkmail (
+name varchar2(250),
+address char,
+id number(3),
+samefam number(3)
+);
+
+insert into junkmail values
+('Alice','A',10,NULL),
+('Bob','B',15,NULL),
+('Carmen','C',22,NULL),
+('Diego','A',9,10),
+('Ella','B',3,15),
+('Farkhad','D',11,NULL);
+
+————————————————————————————————————
+Query:
+————————————————————————————————————
+
+delete from junkmail
+where samefam is null and id in 
+(select samefam from junkmail);
+
+
+select * from junkmail;
+
+————————————————————————————————————
+Question-5:
+————————————————————————————————————
+
+————————————————————————————————————
+Answer-5-1: http://sqlfiddle.com/#!7/bb9528/4
+————————————————————————————————————
+
+create table chefs (
+Chef char,
+Dish varchar(250)
+);
+
+
+insert into chefs values
+('A', 'Mint chocolate brownie'),
+('B', 'Upside down pineapple cake'),
+('B', 'Creme brulee'),
+('B', 'Mint chocolate brownie'),
+('C', 'Upside down pineapple cake'),
+('C', 'Creme brulee'),
+('D', 'Apple pie'),
+('D', 'Upside down pineapple cake'),
+('D', 'Creme brulee'),
+('E', 'Apple pie'),
+('E', 'Upside down pineapple cake'),
+('E', 'Creme brulee'),
+('E', 'Bananas Foster');
+
+
+create table dishes (
+Dish varchar(250)
+);
+
+
+insert into dishes values
+('Apple pie'),
+('Upside down pineapple cake'),
+('Creme brulee');
+
+
+————————————————————————————————————
+Query:
+————————————————————————————————————
+
+select chef from (select * from chefs c natural join dishes d)
+group by chef
+having count(chef) = (select count(*) from dishes);
+
+
+————————————————————————————————————
+Answer-5-2: http://sqlfiddle.com/#!7/bb9528/2
+————————————————————————————————————
+
+create table chefs (
+Chef char,
+Dish varchar(250)
+);
+
+
+insert into chefs values
+('A', 'Mint chocolate brownie'),
+('B', 'Upside down pineapple cake'),
+('B', 'Creme brulee'),
+('B', 'Mint chocolate brownie'),
+('C', 'Upside down pineapple cake'),
+('C', 'Creme brulee'),
+('D', 'Apple pie'),
+('D', 'Upside down pineapple cake'),
+('D', 'Creme brulee'),
+('E', 'Apple pie'),
+('E', 'Upside down pineapple cake'),
+('E', 'Creme brulee'),
+('E', 'Bananas Foster');
+
+
+create table dishes (
+Dish varchar(250)
+);
+
+
+insert into dishes values
+('Apple pie'),
+('Upside down pineapple cake'),
+('Creme brulee');
+
+
+————————————————————————————————————
+Query:
+————————————————————————————————————
+
+select distinct chef from chefs c1
+where not exists ( select * from dishes d 
+where not exists ( select * from chefs c2
+where c1.chef = c2.chef and c2.dish = d.dish
+));
+
+————————————————————————————————————
+Answer-5-3: http://sqlfiddle.com/#!7/bb9528/3
+————————————————————————————————————
+
+create table chefs (
+Chef char,
+Dish varchar(250)
+);
+
+
+insert into chefs values
+('A', 'Mint chocolate brownie'),
+('B', 'Upside down pineapple cake'),
+('B', 'Creme brulee'),
+('B', 'Mint chocolate brownie'),
+('C', 'Upside down pineapple cake'),
+('C', 'Creme brulee'),
+('D', 'Apple pie'),
+('D', 'Upside down pineapple cake'),
+('D', 'Creme brulee'),
+('E', 'Apple pie'),
+('E', 'Upside down pineapple cake'),
+('E', 'Creme brulee'),
+('E', 'Bananas Foster');
+
+
+create table dishes (
+Dish varchar(250)
+);
+
+
+insert into dishes values
+('Apple pie'),
+('Upside down pineapple cake'),
+('Creme brulee');
+
+————————————————————————————————————
+Query:
+————————————————————————————————————
+
+select c.chef from 
+chefs as c join dishes as d
+where c.dish = d.dish
+group by c.chef
+having count(*) = (select count(*) from dishes)
